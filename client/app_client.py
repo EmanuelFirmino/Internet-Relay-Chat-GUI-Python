@@ -36,11 +36,11 @@ class GUI(ctk.CTk):
         def login():
             username = input_1.get()
             password = sha256(input_2.get().encode()).hexdigest()
-            payload = f'user={username}:pass={password}'.encode('utf-8')
+            payload = f'USER {username} {password}'
             
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.connect(('127.0.0.1', 1900))
-            sock.send(payload)
+            sock.send(payload.encode('utf-8'))
             sock.close()
 
         self.geometry("800x600")

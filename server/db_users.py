@@ -9,9 +9,12 @@ class Database:
     def SHA256_Encoder(self, password):
         return sha256(password.encode()).hexdigest()
 
-    def login(self, credentials: list()):
-        self.user       = credentials[0]
-        self.password   = credentials[1]
+    def login(self, credentials: list()) -> bool:
+        #self.user       = credentials[0]
+        #self.password   = credentials[1]
+        #self.cursor.execute(f'SELECT * from user WHERE username="{self.user}" AND password="{self.password}"')
+        #return len(self.cursor.fetchall()) > 0
+        pass
 
     def connect(self):
         self.manipulator = sql.connect(self.dbName)

@@ -5,6 +5,7 @@ import socketserver
 import threading
 
 global netData
+global dbUsers
 
 class queueThread(Queue):
 
@@ -25,13 +26,19 @@ class ircServer(socketserver.BaseRequestHandler):
 
             self.data = self.receive()
             self.action = self.data.split()
-            print(self.data)
 
             if 1:
     
                 if  self.action[0]  == 'USER':
-                    print('ok')
-                    self.send('Tudo funcionando!')
+
+                    credentials = self.action[1:]
+                    
+                    with dbUsers as db:
+                        if db.login(credentials):
+                            print('Acesso concedido!')
+                        else:
+                            print('Acesso negado!')
+
                 elif self.action == 'NICK':
                     print('NICK COMMAND!')
                 elif self.action == 'JOIN':
@@ -65,6 +72,7 @@ class ircThreaded(socketserver.ThreadingMixIn, socketserver.TCPServer):
 if __name__ == '__main__':
 
     netData = queueThread()
+    dbUsers = Database()
     host = '0.0.0.0'
     port = 1900
 
