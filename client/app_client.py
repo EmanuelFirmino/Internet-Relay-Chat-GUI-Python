@@ -2,7 +2,10 @@ import customtkinter as ctk
 import tkinter 		 as tk
 from PIL import Image, ImageTk
 from hashlib import sha256
+import datetime
 import socket
+from time import sleep
+import json
 
 class GUI(ctk.CTk):
     def __init__(self):
@@ -14,6 +17,10 @@ class GUI(ctk.CTk):
 
     def genScreen(self):
 
+        self.NICK = None
+        self.USERNAME = None
+        self.CHANNEL = None
+
         def move(e):
             self.geometry(f'+{e.x_root}+{e.y_root}')
 
@@ -21,27 +28,134 @@ class GUI(ctk.CTk):
             self.destroy()
 
         def send_message():
-            msg = message_box.get()
-            text_box.insert(tk.END,'  # ' + msg + '\n')
-            message_box.delete(0, 'end')
+                try:
+                    payload = dict()
+                    self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    self.sock.connect(('127.0.0.1', 1900))
+                    msg          = message_box.get()
+                    msg_splited  = msg.split()
+                    command = msg_splited[0][1:]
+                    command = command.upper()
+                    message_box.delete(0, 'end')
+                    payload['ACTION'] = 'None'
 
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.connect(('127.0.0.1', 1900))
-            sock.send('USER {}'.format(msg).encode('utf-8'))
+                    if msg[0] == '/':
 
-            msg_recv = sock.recv(4096).decode('utf-8')
-            text_box.insert(tk.END,'  # ' + msg_recv + '\n')
-            sock.close()
+                        if   command == 'USER' and len(msg_splited) == 2:
+                            payload['ACTION']   = 'USER'
+                            payload['NICKNAME'] = msg_splited[1]
 
+                            payload_encoded = json.dumps(payload)
+                            self.sock.sendall(payload_encoded.encode('utf-8'))
+
+                            response = json.loads(self.sock.recv(1024).decode('utf-8'))
+
+                            if response['STATUS'] == 'ok':
+                                text_box.insert(tk.END, f' /USER: Nick: {payload["NICKNAME"]} Real name: {response["INFO"]}.\n')
+                            
+                            else:
+                                text_box.insert(tk.END, f' /USER: Falhou!\n')
+
+                        elif command == 'NICK' and len(msg_splited) == 2:
+                            payload['ACTION']   = 'NICK'
+                            payload['NICKNAME'] = msg_splited[1]
+                            payload['USER_NICKNAME'] = self.NICK
+                            payload['USERNAME'] = self.USERNAME
+
+                            payload_encoded = json.dumps(payload)
+                            self.sock.sendall(payload_encoded.encode('utf-8'))
+
+                            response = json.loads(self.sock.recv(1024).decode('utf-8'))
+
+                            if response['STATUS'] == 'ok':
+                                self.NICK = payload['NICKNAME']
+                                text_box.insert(tk.END, f' /NICK: Seu nickname foi alterado para "{self.NICK}".\n')
+
+                            else:
+                                text_box.insert(tk.END, ' /NICK: Falhou!\n')
+
+                        elif command == 'JOIN' and len(msg_splited) == 2:
+                            payload['ACTION']   = 'JOIN'
+                            payload['CHANNEL']  = msg_splited[1]
+                            payload['USER_NICKNAME'] = self.NICK
+                            payload['USER_CHANNEL'] = self.CHANNEL
+
+                            payload_encoded = json.dumps(payload)
+                            self.sock.sendall(payload_encoded.encode('utf-8'))
+
+                            response = json.loads(self.sock.recv(1024).decode('utf-8'))
+
+                            if response['STATUS'] == 'ok':
+                                text_box.insert(tk.END, f' /JOIN: Você entrou no canal {payload["CHANNEL"]}.\n')
+                                self.CHANNEL = payload['CHANNEL']
+
+                            else:
+                                text_box.insert(tk.END, ' /JOIN: Falhou!\n')
+
+
+                        elif command == 'LIST':
+                            payload['ACTION']   = 'LIST'
+
+                            payload_encoded = json.dumps(payload)
+                            self.sock.sendall(payload_encoded.encode('utf-8'))
+
+                            response = json.loads(self.sock.recv(1024).decode('utf-8'))
+
+                            if response['STATUS'] == 'ok':
+                                for channel in response['CHANNEL_INFO']:
+                                    text_box.insert(tk.END, f' /LIST:  Canal "{channel[0]}" possui {channel[1]} usuários ativos no momento.\n')
+
+                            else:
+                                text_box.insert(tk.END, ' /LIST: Falhou!\n')
+
+                        elif command == 'PART' and len(msg_splited) == 2:
+                            payload['ACTION'] = 'PART'
+                            payload['CHANNEL'] = msg_splited[1]
+                            payload['USER_NICKNAME'] = self.NICK
+                            payload['USER_CHANNEL'] = self.CHANNEL
+
+                            payload_encoded = json.dumps(payload)
+                            self.sock.sendall(payload_encoded.encode('utf-8'))
+
+                            response = json.loads(self.sock.recv(1024).decode('utf-8'))
+
+                            if response['STATUS'] == 'ok':
+                                self.CHANNEL = None
+                                text_box.insert(tk.END, f' /PART: Você saiu do canal {payload["CHANNEL"]}.\n')
+
+                            else:
+                                text_box.insert(tk.END, f' /PART: Falhou!\n')
+
+                        else:
+                            pass
+
+                except:
+                    self.sock.close()
+
+        def formatZero(n):
+            if n < 10:
+                return '0' + str(n)
+            return str(n)
+                    
         def login():
-            username = input_1.get()
-            password = sha256(input_2.get().encode()).hexdigest()
-            payload = f'USER {username} {password}'
+            try:
+                self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                self.sock.connect(('127.0.0.1', 1900))
+                username = input_1.get()
+                password = sha256(input_2.get().encode()).hexdigest()
+                input_1.delete(0, 'end')
+                input_2.delete(0, 'end')
+                payload = dict()
+                payload['ACTION'] = 'LIST'
+                payload['NICKNAME'] = username
+                payload['PASSWORD'] = password
+                payload_encoded = json.dumps(payload)
+                self.sock.sendall(payload_encoded.encode('utf-8'))
             
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.connect(('127.0.0.1', 1900))
-            sock.send(payload.encode('utf-8'))
-            sock.close()
+            except:
+                self.sock.close()
+
+# ----------------------------------------------------------------------------------------------------
 
         self.geometry("800x600")
         self.wm_attributes('-transparentcolor', "black")
@@ -84,6 +198,10 @@ class GUI(ctk.CTk):
         button_send.place(relx=0.88, rely=0.95, anchor=tk.W, relwidth=0.1)
         text_box = tk.Text(master=frame_2, font=("Comic Sans MS", 14), relief='sunken', yscrollcommand=True, bg='#302a2a', fg='white')
         text_box.place(relx=0.5, rely=0.465, anchor=tk.CENTER, relwidth=0.96, relheight=0.88)
+        time = datetime.datetime.now()
+        time_now = formatZero(time.hour)+':'+formatZero(time.minute)+':'+formatZero(time.second)
+        text_box.insert(tk.END, f' # [{time_now}] - Bem vindo ao servidor IRC!\n')
+        text_box.insert(tk.END, f' # [{time_now}] - Use "/" antes do comando que deseja executar. (ex: /user anonimo)\n')
 
         divisor.add(loginScreen)
         divisor.add(rightSide)

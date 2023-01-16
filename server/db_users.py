@@ -1,3 +1,4 @@
+
 import sqlite3 as sql
 from hashlib import sha256
 import re
@@ -9,12 +10,11 @@ class Database:
     def SHA256_Encoder(self, password):
         return sha256(password.encode()).hexdigest()
 
-    def login(self, credentials: list()) -> bool:
-        #self.user       = credentials[0]
-        #self.password   = credentials[1]
-        #self.cursor.execute(f'SELECT * from user WHERE username="{self.user}" AND password="{self.password}"')
-        #return len(self.cursor.fetchall()) > 0
-        pass
+    def login(self, credentials: list()) -> tuple():
+        self.user       = credentials[0]
+        self.password   = credentials[1]
+        self.cursor.execute(f'SELECT * from user WHERE nickname="{self.user}" AND password="{self.password}"')
+        self.cursor.fetchall()
 
     def connect(self):
         self.manipulator = sql.connect(self.dbName)
@@ -45,3 +45,6 @@ class Database:
         self.cursor.execute('''CREATE TABLE IF NOT EXISTS user (id INTEGER PRIMARY KEY, username CHAR(30) NOT NULL,
         password CHAR(200) NOT NULL, nickname CHAR(30) UNIQUE)''')
         self.manipulator.commit()
+
+with Database() as db:
+    print(db.get_user())

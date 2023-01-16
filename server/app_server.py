@@ -1,91 +1,182 @@
-from db_users import Database
-from time     import sleep
-from queue    import Queue
-import socketserver
+from sys import stdout
+import socket
 import threading
+import json
 
-global netData
-global dbUsers
+class IRCServer:
+    def __init__(self, address, port):
+        self.decoder = 'utf-8'
+        self.socketObj = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.socketObj.bind((address, port))
+        self.socketObj.listen(20)
 
-class queueThread(Queue):
+        self.clientsThread      = dict()
+        self.NICKS           = dict()
+        self.CHANNELS           = dict()
+        self.CHANNELS['#welcome'] = list()
+        self.CHANNELS['#unb']     = list()
+        
+        self.listener = threading.Thread(target=self.threadListener)
+        self.listener.run()
 
-    def insert(self, data):
-        self.put(data)
+    def threadListener(self):
+        while True:
+            try:
+                clientSocket, addr = self.socketObj.accept()
+                print('Client accepted: ' + str(addr))
 
-    def catch(self):
-        return self.get()
-
-    def has_requisition(self):
-        return self.qsize() > 0
-
-class ircServer(socketserver.BaseRequestHandler):
-
-    def handle(self):
-
-        while ( True ):
-
-            self.data = self.receive()
-            self.action = self.data.split()
-
-            if 1:
-    
-                if  self.action[0]  == 'USER':
-
-                    credentials = self.action[1:]
-                    
-                    with dbUsers as db:
-                        if db.login(credentials):
-                            print('Acesso concedido!')
-                        else:
-                            print('Acesso negado!')
-
-                elif self.action == 'NICK':
-                    print('NICK COMMAND!')
-                elif self.action == 'JOIN':
-                    print('JOIN COMMAND!')
-                elif self.action == 'PART':
-                    print('PART COMMAND!')
-                elif self.action == 'LIST':
-                    print('LIST COMMAND!')
-                elif self.action == 'PRIVMSG':
-                    print('PRIVMSG COMMAND!')
-                elif self.action == 'WHO':
-                    print('WHO COMMAND!')
-                elif self.action == 'QUIT':
-                    print('this is QUIT!')                    
-                else:
-                    print('ERR UNKNOWNCOMMAND')
+            except OSError:
                 break
 
-    def receive(self):
-        self.encode       = 'utf-8'
-        self.bytes_length = 4096
-        return self.request.recv(self.bytes_length).decode(self.encode)
+            self.clientsThread[addr] = threading.Thread(target=self.threadService, args=(addr, clientSocket), daemon=True)
+            self.clientsThread[addr].run()
 
-    def send(self, message) -> None:
-        self.encode       = 'utf-8'
-        self.request.sendall(message.encode(self.encode))
+    def threadService(self, addr, clientSocket: socket.socket):
 
-class ircThreaded(socketserver.ThreadingMixIn, socketserver.TCPServer):
-    pass
+        retries = 2
+        clientSocket.settimeout(2)
+
+        while True:
+            try: 
+                message = clientSocket.recv(1024)
+            
+            except TimeoutError as e:
+                print(e)
+                clientSocket.close()
+                break
+
+            except Exception as e:
+                print(e)
+                break
+
+            if len(message):
+                retries = 2
+            else:
+                retries -= 1
+                if not retries:
+                    break
+                continue
+
+            decoded_message = json.loads(message.decode(self.decoder))
+            response        = json.dumps(self.messageHandler(decoded_message)).encode(self.decoder)
+            
+
+            clientSocket.send(response)
+
+    def messageHandler(self, message):
+        response = dict()
+        command  = message['ACTION']
+
+        # USER --------------------------------------------------------------------
+
+        if   command == 'USER':
+
+            if message['NICKNAME'] in self.NICKS.keys():
+
+                response['STATUS'] = 'ok'
+                response['INFO']   = self.NICKS[message['NICKNAME']]
+            
+            else:
+                
+                response['STATUS'] = 'fail'
+
+        # -------------------------------------------------------------------------
+
+        elif command == 'PRIVMSG':
+            pass
+
+        elif command == 'WHO':
+
+            pass
+
+            
+
+        # NICK --------------------------------------------------------------------
+
+        elif command == 'NICK':
+
+            if   message['NICKNAME'] not in self.NICKS.keys(): 
+                
+                self.NICKS[message['NICKNAME']] = message['USERNAME']
+                response['STATUS'] = 'ok'
+                
+            elif message['USER_NICKNAME'] in self.NICKS.keys():
+
+                del self.NICKS[message['USER_NICKNAME']]
+                self.NICKS[message['NICKNAME']] = message['USERNAME']
+                response['STATUS'] = 'ok'
+
+            else:
+
+                response['STATUS'] = 'fail'
+
+        # END ---------------------------------------------------------------------
+
+        # JOIN --------------------------------------------------------------------
+
+        elif command == 'JOIN':
+            if message['CHANNEL'] in self.CHANNELS.keys() and message['USER_NICKNAME']:
+
+                if self.inAChannel(message['USER_NICKNAME']):
+                    self.removeNick(message['USER_NICKNAME'])
+
+                self.CHANNELS[message['CHANNEL']].append(message['USER_NICKNAME'])
+                response['STATUS'] = 'ok'
+
+            else:
+
+                response['STATUS'] = 'fail'
+
+        # END ---------------------------------------------------------------------
+
+        # PART --------------------------------------------------------------------
+
+        elif command == 'PART':
+            if message['USER_NICKNAME'] and message['USER_CHANNEL']:
+                if message['USER_NICKNAME'] in self.CHANNELS[message['USER_CHANNEL']] and message['CHANNEL'] == message['USER_CHANNEL']:
+                    self.removeNick(message['USER_NICKNAME'])
+                    response['STATUS'] = 'ok'
+                else:
+                    response['STATUS'] = 'fail'
+            else:
+                response['STATUS'] = 'fail'
+
+        # END ---------------------------------------------------------------------
+
+        # LIST --------------------------------------------------------------------
+
+        elif command == 'LIST':
+
+            response['CHANNEL_INFO'] = [ [ channel, len(self.CHANNELS[channel]) ] for channel in self.CHANNELS.keys() ]
+            response['STATUS']       = 'ok'
+
+        # END ---------------------------------------------------------------------
+
+        elif command == 'QUIT':
+            response['STATUS'] = 'QUIT'
+
+        # ERR ---------------------------------------------------------------------
+
+        else:
+            response['STATUS'] = 'ERR UNKNOWNCOMMAND'
+
+        # END ---------------------------------------------------------------------
+        
+        return response 
+    
+    def inAChannel(self, nick) -> bool:
+        for channel in self.CHANNELS.keys():
+            if nick in self.CHANNELS[channel]:
+                return True
+        return False
+
+    def removeNick(self, nick):
+        for channel in self.CHANNELS.keys():
+            for index in range(len(self.CHANNELS[channel])):
+                if nick == self.CHANNELS[channel][index]:
+                    del self.CHANNELS[channel][index]
+
+
 
 if __name__ == '__main__':
-
-    netData = queueThread()
-    dbUsers = Database()
-    host = '0.0.0.0'
-    port = 1900
-
-    sock    = ircServer
-    server  = ircThreaded((host, port), sock)
-    server.allow_reuse_address = True
-
-    sThreaded = threading.Thread(target=server.serve_forever)
-    sThreaded.daemon = True
-    sThreaded.start()
-
-    print(f'[+] Server iniciado em {host}:{port} [+] ')
-
-    while ( True ):
-           sleep(10)
-           
+    IRCServer('127.0.0.1', 1900)

@@ -1,0 +1,151 @@
+from db_users import Database
+from time     import sleep
+from queue    import Queue
+import datetime
+import socketserver
+import threading
+
+global netData
+global dbUsers
+global currThread
+
+class currThread:
+    def __init__(self):
+        self.ident = None
+    def setIdent(self, newIdent):
+        self.ident = newIdent
+    def getIdent(self):
+        return self.ident
+
+class queueThread(Queue):
+
+    def insert(self, data):
+        self.put(data)
+
+    def catch(self):
+        return self.get()
+
+    def has_requisition(self):
+        return self.qsize() > 0
+
+class ircServer(socketserver.BaseRequestHandler):
+
+    def handle(self):
+
+        notforwardSignal = False
+
+        while ( True ):
+
+            print(netData.has_requisition(), currT.getIdent(), threading.current_thread().ident)
+
+    
+            if netData.has_requisition() and currT.getIdent() != threading.current_thread().ident:
+                self.data = netData.catch()
+                notforwardSignal = False
+
+            else:
+                self.data = self.receive()
+                notforwardSignal = True
+    
+            if self.data:    
+
+                self.cluster = self.data.split()
+                self.action = self.cluster[0]
+                self.msg = self.organizeText(self.cluster[1:])
+
+            if self.action == 'PRIVMSG' and len(self.msg) and notforwardSignal:
+                netData.insert(self.data)
+                currT.setIdent(threading.current_thread().ident)
+
+            
+    
+
+# ---------------------------- Sessão de Login -------------------------
+
+            if  self.action  == 'USER':
+
+                credentials = self.msg[:]
+                
+                with dbUsers as db:
+                    if db.login(credentials):
+                        print('Acesso concedido!')
+                    else:
+                        print('Acesso negado!')
+
+# ----------------------------------------------------------------------
+
+            elif self.action == 'NICK':
+                new_nick = self.msg
+
+                with dbUsers as db:
+                    pass
+
+
+            elif self.action == 'JOIN':
+                print('JOIN COMMAND!')
+            elif self.action == 'PART':
+                print('PART COMMAND!')
+
+            elif self.action == 'LIST':
+                print('LIST COMMAND!')
+
+# ---------------------------- Sessão de MSG ---------------------------
+
+            elif self.action == 'PRIVMSG':
+                hNow = datetime.datetime.now()
+                self.send(f"{hNow.hour}:{hNow.minute}:{hNow.second} - {self.msg}")
+
+# ----------------------------------------------------------------------
+
+
+
+
+
+            elif self.action == 'WHO':
+                print('WHO COMMAND!')
+            elif self.action[0] == 'QUIT':
+                print('this is QUIT!')
+                break                    
+            else:
+                print('ERR UNKNOWNCOMMAND')
+
+
+    def receive(self):
+        self.encode       = 'utf-8'
+        self.bytes_length = 4096
+        return self.request.recv(self.bytes_length).decode(self.encode)
+
+    def send(self, message) -> None:
+        self.encode       = 'utf-8'
+        self.request.sendall(message.encode(self.encode))
+
+    def organizeText(self, data, txt=''):
+        for w in data: txt += f'{w} '
+        return txt
+
+
+
+class ircThreaded(socketserver.ThreadingMixIn, socketserver.TCPServer):
+    pass
+
+if __name__ == '__main__':
+
+    netData = queueThread(maxsize=10)
+    dbUsers = Database()
+    currT = currThread()
+    host = '0.0.0.0'
+    port = 1900
+
+    sock    = ircServer
+    server  = ircThreaded((host, port), sock)
+    server.allow_reuse_address = True
+
+    sThreaded = threading.Thread(target=server.serve_forever)
+    sThreaded.daemon = True
+    sThreaded.start()
+
+    print(f'[+] Server iniciado em {host}:{port} [+] ')
+
+    while ( True ):
+           sleep(10)
+           
