@@ -20,12 +20,20 @@ class GUI(ctk.CTk):
         self.NICK = None
         self.USERNAME = None
         self.CHANNEL = None
+        self.CURRMSG = 0
 
         def move(e):
             self.geometry(f'+{e.x_root}+{e.y_root}')
 
         def close_window():
             self.destroy()
+
+        def formatMSG(msg):
+            m=''
+            for ms in msg:
+                m += f'{ms} '
+
+            return m
 
         def send_message():
                 try:
@@ -126,8 +134,48 @@ class GUI(ctk.CTk):
                             else:
                                 text_box.insert(tk.END, f' /PART: Falhou!\n')
 
+                        elif command == 'PRIVMSG' and len(msg_splited) >= 4:
+                            payload['ACTION'] = 'PRIVMSG'
+                            payload['TYPE'] = msg_splited[1]
+                            payload['TARGET'] = msg_splited[2]
+                            payload['USER_NICKNAME'] = self.NICK
+                            payload['MESSAGE'] = msg_splited[3:] 
+                            payload['MESSAGE'] = f'{self.NICK}: {formatMSG(payload["MESSAGE"])}'
+
+                            payload_encoded = json.dumps(payload)
+                            self.sock.sendall(payload_encoded.encode('utf-8'))
+
+                            response = json.loads(self.sock.recv(1024).decode('utf-8'))
+
+                            if response['STATUS'] == 'ok':
+                                time = datetime.datetime.now()
+                                time_now = formatZero(time.hour)+':'+formatZero(time.minute)+':'+formatZero(time.second)
+                                text_box.insert(tk.END, f'# [{time_now}] - {payload["MESSAGE"]}\n')
+
+                        elif command == 'REFRESH':
+                            payload['ACTION'] = 'REFRESH'
+                            payload['USER_NICKNAME'] = self.NICK
+                            payload['USER_CHANNEL'] = self.CHANNEL
+                            payload['CURR'] = self.CURRMSG
+
+                            payload_encoded = json.dumps(payload)
+                            self.sock.sendall(payload_encoded.encode('utf-8'))
+
+                            response = json.loads(self.sock.recv(1024).decode('utf-8'))
+
+                            if response['STATUS'] == 'ok':
+                                self.CURRMSG = response['CURR']+1
+                                for message in response['MESSAGES']:
+                                    time = datetime.datetime.now()
+                                    time_now = formatZero(time.hour)+':'+formatZero(time.minute)+':'+formatZero(time.second)
+                                    text_box.insert(tk.END, f' # [{time_now}] - {message}\n')
+
+                        elif command == 'QUIT':
+                            self.destroy()
+
                         else:
-                            pass
+                            text_box.insert(tk.END, ' /ERRO: Comando desconhecido!\n')
+                            
 
                 except:
                     self.sock.close()

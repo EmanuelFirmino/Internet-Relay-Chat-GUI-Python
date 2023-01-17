@@ -15,6 +15,7 @@ class IRCServer:
         self.CHANNELS           = dict()
         self.CHANNELS['#welcome'] = list()
         self.CHANNELS['#unb']     = list()
+        self.DBMessages           = list()
         
         self.listener = threading.Thread(target=self.threadListener)
         self.listener.run()
@@ -83,7 +84,24 @@ class IRCServer:
         # -------------------------------------------------------------------------
 
         elif command == 'PRIVMSG':
-            pass
+            
+            response['STATUS'] = 'ok'
+            msg = { 'TYPE': message['TYPE'], 'TARGET': message['TARGET'], 'MESSAGE': message['MESSAGE'], 'USER_NICKNAME': message['USER_NICKNAME']}
+            self.DBMessages.append(msg)
+
+
+        elif command == 'REFRESH':
+            back = []
+            for i in range(message['CURR'], len(self.DBMessages)):
+                if message['USER_NICKNAME'] == self.DBMessages[i]['TARGET'] or message['USER_CHANNEL'] == self.DBMessages[i]['TARGET']:
+                    back.append(f'{self.DBMessages[i]["MESSAGE"]}')
+
+            if len(back):
+                response['STATUS'] = 'ok'
+                response['MESSAGES'] = back
+                response['CURR'] = len(self.DBMessages)-1
+            else:
+                response['STATUS'] = 'fail'
 
         elif command == 'WHO':
 
@@ -151,6 +169,18 @@ class IRCServer:
             response['STATUS']       = 'ok'
 
         # END ---------------------------------------------------------------------
+
+        elif command == 'REFRESH':
+            msgs = []
+            for msg in self.DBMessages:
+                if message['USER_NICKNAME'] == msg['TARGET'] or message['USER_CHANNEL'] == msg['TARGET']:
+                    msgs.append(f'{message["USERNAME"]}: {msg["MESSAGE"]}')
+            
+            if len(msgs):
+                response['STATUS'] = 'ok'
+
+            else:
+                response['STATUS'] = 'fail'
 
         elif command == 'QUIT':
             response['STATUS'] = 'QUIT'
